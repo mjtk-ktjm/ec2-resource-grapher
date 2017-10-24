@@ -27,6 +27,15 @@ def get_arn_type_func(arn):
     elif short_type == 'sg':
         return SecurityGroup(arn)
 
+
+def flatten_tags(tags=None):
+    if tags is None or len(tags) == 0:
+        return ''
+    tag_list = [list(x) for x in [y.values() for y in tags]]
+    formatted_tags = [str(val[0])+'='+str(val[1]) for val in tag_list]
+    return '\n'.join(formatted_tags)
+
+
 class Asset:
     """
     Base Class for amazon assets.
@@ -70,8 +79,9 @@ class Instance(Asset):
         if len(payload['Reservations'][0]['Instances'])>1:
             print('More than 1 instance here!')
 
-        pp(payload['Reservations'][0]['Instances'][0])
-        return payload['Reservations'][0]['Instances'][0]
+        return_payload = payload['Reservations'][0]['Instances'][0]
+        return_payload['asset_is'] = return_payload['InstanceId']
+        return return_payload
 
 
 class Volume(Asset):
@@ -92,8 +102,9 @@ class Volume(Asset):
         if len(payload['Volumes'])>1:
             print('More than 1 volume here!')
 
-        pp(payload['Volumes'][0])
-        return payload['Volumes'][0]
+        return_payload = payload['Volumes'][0]
+        return_payload['asset_is'] = return_payload['VolumeId']
+        return return_payload
 
 
 class Snapshot(Asset):
@@ -114,8 +125,9 @@ class Snapshot(Asset):
         if len(payload['Snapshots'])>1:
             print('More than 1 snapshot here!')
 
-        pp(payload['Snapshots'][0])
-        return payload['Snapshots'][0]
+        return_payload = payload['Snapshots'][0]
+        return_payload['asset_is'] = return_payload['SnapshotId'] 
+        return return_payload
 
 
 class Image(Asset):
@@ -136,8 +148,9 @@ class Image(Asset):
         if len(payload['Images'])>1:
             print('More than 1 image here!')
 
-        pp(payload['Images'][0])
-        return payload['Images'][0]
+        return_payload = payload['Images'][0]
+        return_payload['asset_is'] = return_payload['ImageId']
+        return return_payload
 
 
 class SecurityGroup(Asset):
@@ -158,8 +171,9 @@ class SecurityGroup(Asset):
         if len(payload['SecurityGroups'])>1:
             print('More than 1 group here!')
 
-        pp(payload['SecurityGroups'][0])
-        return payload['SecurityGroups'][0]
+        return_payload = payload['SecurityGroups'][0]
+        return_payload['asset_is'] = return_payload['GroupId']
+        return return_payload
 
 
 if __name__ == '__main__':
@@ -182,13 +196,20 @@ if __name__ == '__main__':
     arns.append('ami-7c8a776a')
     arns.append('sg-525be129')
 
+    assets = []
+
     for arn in arns:
         print('\n\nFetching {}:'.format(arn))
         z = get_arn_type_func(arn)
-        z.fetch_asset()
+        assets.append(z.fetch_asset())
 
+    # pp(assets)
 
-    print(resources_found)
+    for a in assets:
+        if 'Tags' in a.keys():
+            print()
+            print(a['asset_is'])
+            print(flatten_tags(a['Tags']))
 
     sys.exit()
 
