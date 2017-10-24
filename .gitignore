@@ -99,3 +99,15 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# mac
+.DS_Store
+
+# https://github.com/github/gitignore/blob/master/Global/Vim.gitignore
+# swap
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-v][a-z]
+[._]sw[a-p]
+# session
+Session.vim
