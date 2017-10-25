@@ -5,8 +5,15 @@ from pprint import pprint as pp
 import sys
 
 resources_found = list()
-interesting_fields = {  'i' : ['BlockDeviceMappings','ImageId','InstanceId','SecurityGroups'],
-                        'vol' : ['snap'],
+interesting_fields = {  'i' : [
+                                'BlockDeviceMappings',
+                                'ImageId',
+                                'InstanceId',
+                                'SecurityGroups',
+                                ],
+                        'vol' : [
+                                'snap'
+                                ],
                         'ami' : [],
                         'snap' : [],
                         'sg' : [],
@@ -26,6 +33,20 @@ def get_arn_type_func(arn):
         return Image(arn) 
     elif short_type == 'sg':
         return SecurityGroup(arn)
+
+
+def asset_type(arn):
+    short_type, arn_int = arn.split('-')
+    if short_type == 'i':
+        return 'Instance'
+    elif short_type == 'vol':
+        return 'Volume'
+    elif short_type == 'snap':
+        return 'Snapshot' 
+    elif short_type == 'ami':
+        return 'Image' 
+    elif short_type == 'sg':
+        return 'SecurityGroup'
 
 
 def flatten_tags(tags=None):
@@ -52,9 +73,9 @@ class Asset:
         self.arn = arn
         self.children = None
         self.tag_str = None
-
-    def print_asset_arn(self):
-        print(self.arn + ' : yay!')
+        self.payload = None
+        self.ref_time = None
+        self.asset_id = None
 
 
 class Instance(Asset):
@@ -79,9 +100,12 @@ class Instance(Asset):
         if len(payload['Reservations'][0]['Instances'])>1:
             print('More than 1 instance here!')
 
-        return_payload = payload['Reservations'][0]['Instances'][0]
-        return_payload['asset_is'] = return_payload['InstanceId']
-        return return_payload
+        # quick_payload = payload['Reservations'][0]['Instances'][0]
+        # quick_payload['asset_is'] = quick_payload['InstanceId']
+        self.payload = payload['Reservations'][0]['Instances'][0]
+        self.asset_id = payload['Reservations'][0]['Instances'][0]['InstanceId']
+        self.ref_time = payload['Reservations'][0]['Instances'][0]['LaunchTime']
+        # return quick_payload
 
 
 class Volume(Asset):
@@ -102,9 +126,11 @@ class Volume(Asset):
         if len(payload['Volumes'])>1:
             print('More than 1 volume here!')
 
-        return_payload = payload['Volumes'][0]
-        return_payload['asset_is'] = return_payload['VolumeId']
-        return return_payload
+        # return_payload = payload['Volumes'][0]
+        # return_payload['asset_is'] = return_payload['VolumeId']
+        # return return_payload
+        self.payload = payload['Volumes'][0]
+        self.asset_id = payload['Volumes'][0]['InstanceId']
 
 
 class Snapshot(Asset):
@@ -125,9 +151,11 @@ class Snapshot(Asset):
         if len(payload['Snapshots'])>1:
             print('More than 1 snapshot here!')
 
-        return_payload = payload['Snapshots'][0]
-        return_payload['asset_is'] = return_payload['SnapshotId'] 
-        return return_payload
+        self.payload = payload['Snapshots'][0]
+        self.asset_id =  payload['Snapshots'][0]['SnapshotId']
+        # return_payload = payload['Snapshots'][0]
+        # return_payload['asset_is'] = return_payload['SnapshotId'] 
+        # return return_payload
 
 
 class Image(Asset):
@@ -148,9 +176,11 @@ class Image(Asset):
         if len(payload['Images'])>1:
             print('More than 1 image here!')
 
-        return_payload = payload['Images'][0]
-        return_payload['asset_is'] = return_payload['ImageId']
-        return return_payload
+        self.payload =  payload['Images'][0]
+        self.asset_id =  payload['Images'][0]['ImageId']
+        # return_payload = payload['Images'][0]
+        # return_payload['asset_is'] = return_payload['ImageId']
+        # return return_payload
 
 
 class SecurityGroup(Asset):
@@ -171,17 +201,17 @@ class SecurityGroup(Asset):
         if len(payload['SecurityGroups'])>1:
             print('More than 1 group here!')
 
-        return_payload = payload['SecurityGroups'][0]
-        return_payload['asset_is'] = return_payload['GroupId']
-        return return_payload
+        self.payload = payload['SecurityGroups'][0]
+        self.asset_id = payload['SecurityGroups'][0]['GroupId']
+        # return_payload = payload['SecurityGroups'][0]
+        # return_payload['asset_is'] = return_payload['GroupId']
+        # return return_payload
 
 
 if __name__ == '__main__':
     """
 
     """
-
-
     arns = list()
 
     # arns.append('vol-596aeefe')# volume eg
@@ -191,19 +221,24 @@ if __name__ == '__main__':
     # arns.append('i-836b9d9b')# instance eg
 
     arns.append('i-0b2efb42fb389c3fb')
-    arns.append('vol-0e566a70d756391eb')
-    arns.append('vol-0151f28dcf5e7ba9d')
-    arns.append('ami-7c8a776a')
-    arns.append('sg-525be129')
+    # arns.append('vol-0e566a70d756391eb')
+    # arns.append('vol-0151f28dcf5e7ba9d')
+    # arns.append('ami-7c8a776a')
+    # arns.append('sg-525be129')
 
     assets = []
 
     for arn in arns:
         print('\n\nFetching {}:'.format(arn))
-        z = get_arn_type_func(arn)
-        assets.append(z.fetch_asset())
+        asset_payload = get_arn_type_func(arn)
+        # asset_payload.fetch_asset()
+        # pp(asset_payload.asset_id)
+        
+        assets.append(asset_payload.fetch_asset())
 
     # pp(assets)
+    
+    sys.exit()
 
     for a in assets:
         if 'Tags' in a.keys():
@@ -211,7 +246,6 @@ if __name__ == '__main__':
             print(a['asset_is'])
             print(flatten_tags(a['Tags']))
 
-    sys.exit()
 
     r = Instance(arn)
     r.print_asset_arn()
