@@ -5,37 +5,27 @@ from pprint import pprint as pp
 import sys
 
 resources_found = list()
-interesting_fields = {  'i' : [
-                                'BlockDeviceMappings',
-                                'ImageId',
-                                'InstanceId',
-                                'SecurityGroups',
-                                ],
-                        'vol' : [
-                                'snap'
-                                ],
-                        'ami' : [],
-                        'snap' : [],
-                        'sg' : [],
+resource_tree = dict()
+direct_descendants = dict()
+
+interesting_fields = {'Instance':['BlockDeviceMappings','ImageId','SecurityGroups'],
+                    'Volume':['','',],
+                    'Snapshot':['','',],
+                    'Image':['','',],
+                    'SecurityGroup':['','',],
                     }
+
+fuzzy_fields = {'Instance':{'_id':'InstanceId','_time':'LaunchTime'},
+                'Volume':{'_id':'VolumeId','_time':'LaunchDate'},
+                'Snapshot':{'_id':'SnapShotId','_time':'LaunchDate'},
+                'Image':{'_id':'ImageId','_time':'LaunchDate'},
+                'SecurityGroup':{'_id':'GroupId','_time':'LaunchDate'},
+                }
 
 ec2 = boto3.client('ec2')
 
-def get_arn_type_func(arn):
-    short_type, arn_int = arn.split('-')
-    if short_type == 'i':
-        return Instance(arn)
-    elif short_type == 'vol':
-        return Volume(arn)
-    elif short_type == 'snap':
-        return Snapshot(arn) 
-    elif short_type == 'ami':
-        return Image(arn) 
-    elif short_type == 'sg':
-        return SecurityGroup(arn)
 
-
-def asset_type(arn):
+def get_arn_type(arn):
     short_type, arn_int = arn.split('-')
     if short_type == 'i':
         return 'Instance'
@@ -47,6 +37,35 @@ def asset_type(arn):
         return 'Image' 
     elif short_type == 'sg':
         return 'SecurityGroup'
+
+
+def fetch_asset_obj(arn):
+    arn_type = get_arn_type(arn)
+    if arn_type == 'Instance':
+        return Instance(arn)
+    elif arn_type == 'Volume':
+        return Volume(arn)
+    elif arn_type == 'Snapshot':
+        return Snapshot(arn) 
+    elif arn_type == 'Image':
+        return Image(arn) 
+    elif arn_type == 'SecurityGroup':
+        return SecurityGroup(arn)
+
+
+def extract_arns(field, value_section):
+    if field == 'BlockDeviceMappings':
+        volume_ids = list()
+        for volume in value_section:
+            if 'Ebs' in volume.keys():
+                volume_ids.append(volume['Ebs']['VolumeId'])
+        return volume_ids
+    elif field == 'ImageId':
+        return [value_section] 
+    elif field == 'SecurityGroups':
+        return [group['GroupId'] for group in value_section]
+    else:
+        return list()
 
 
 def flatten_tags(tags=None):
@@ -61,14 +80,14 @@ class Asset:
     """
     Base Class for amazon assets.
     """
-
     def __init__(self, arn):
 
-        if arn in resources_found:
+        # TODO move this
+        if arn in direct_descendants.keys():
             print("Already found ", arn)
             return None
         else:
-            resources_found.append(arn)
+            direct_descendants[arn] = list()
 
         self.arn = arn
         self.children = None
@@ -77,11 +96,19 @@ class Asset:
         self.ref_time = None
         self.asset_id = None
 
+    def get_asset_id(self):
+        asset_type = self._type
+        id_field = fuzzy_fields[asset_type]['_id']
+        return self.payload[id_field]
+
 
 class Instance(Asset):
     """
 
     """
+    def __init__(self, arn):
+        super().__init__(arn)
+
     def fetch_asset(self):
         try:
             payload = ec2.describe_instances(InstanceIds=[self.arn])
@@ -100,12 +127,7 @@ class Instance(Asset):
         if len(payload['Reservations'][0]['Instances'])>1:
             print('More than 1 instance here!')
 
-        # quick_payload = payload['Reservations'][0]['Instances'][0]
-        # quick_payload['asset_is'] = quick_payload['InstanceId']
         self.payload = payload['Reservations'][0]['Instances'][0]
-        self.asset_id = payload['Reservations'][0]['Instances'][0]['InstanceId']
-        self.ref_time = payload['Reservations'][0]['Instances'][0]['LaunchTime']
-        # return quick_payload
 
 
 class Volume(Asset):
@@ -126,11 +148,7 @@ class Volume(Asset):
         if len(payload['Volumes'])>1:
             print('More than 1 volume here!')
 
-        # return_payload = payload['Volumes'][0]
-        # return_payload['asset_is'] = return_payload['VolumeId']
-        # return return_payload
         self.payload = payload['Volumes'][0]
-        self.asset_id = payload['Volumes'][0]['InstanceId']
 
 
 class Snapshot(Asset):
@@ -152,10 +170,6 @@ class Snapshot(Asset):
             print('More than 1 snapshot here!')
 
         self.payload = payload['Snapshots'][0]
-        self.asset_id =  payload['Snapshots'][0]['SnapshotId']
-        # return_payload = payload['Snapshots'][0]
-        # return_payload['asset_is'] = return_payload['SnapshotId'] 
-        # return return_payload
 
 
 class Image(Asset):
@@ -177,10 +191,6 @@ class Image(Asset):
             print('More than 1 image here!')
 
         self.payload =  payload['Images'][0]
-        self.asset_id =  payload['Images'][0]['ImageId']
-        # return_payload = payload['Images'][0]
-        # return_payload['asset_is'] = return_payload['ImageId']
-        # return return_payload
 
 
 class SecurityGroup(Asset):
@@ -202,10 +212,6 @@ class SecurityGroup(Asset):
             print('More than 1 group here!')
 
         self.payload = payload['SecurityGroups'][0]
-        self.asset_id = payload['SecurityGroups'][0]['GroupId']
-        # return_payload = payload['SecurityGroups'][0]
-        # return_payload['asset_is'] = return_payload['GroupId']
-        # return return_payload
 
 
 if __name__ == '__main__':
@@ -226,18 +232,41 @@ if __name__ == '__main__':
     # arns.append('ami-7c8a776a')
     # arns.append('sg-525be129')
 
-    assets = []
+    assets = {}
 
+    while True:
+        if len(arns)==0:
+            break;
+        else:
+            arn = arns.pop()
+            this_asset = fetch_asset_obj(arn)
+            this_asset.fetch_asset()
+            pp(this_asset.payload)
+            search_keys = interesting_fields[get_arn_type(arn)]
+            keys_found = [k for k in search_keys if k in this_asset.payload.keys()]
+            for k in keys_found:
+                vs = extract_arns(k, this_asset.payload[k])
+                pp(vs)
+                 
+                [arns.append(v) for v in vs] 
+                
+
+    sys.exit()
     for arn in arns:
         print('\n\nFetching {}:'.format(arn))
-        asset_payload = get_arn_type_func(arn)
-        # asset_payload.fetch_asset()
-        # pp(asset_payload.asset_id)
-        
-        assets.append(asset_payload.fetch_asset())
+        this_asset = fetch_asset_obj(arn)
+        this_asset.fetch_asset()
 
-    # pp(assets)
-    
+        this_asset._type = get_arn_type(arn)
+        # this_asset._id = this_asset.get_asset_id()
+        assets[arn] = this_asset 
+  
+
+
+
+     
+    pp(assets)
+    print(direct_descendants) 
     sys.exit()
 
     for a in assets:
