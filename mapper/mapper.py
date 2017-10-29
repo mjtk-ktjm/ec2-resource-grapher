@@ -70,6 +70,22 @@ def extract_arns(field, value_section):
         return list()
 
 
+def build_viz(node):
+    branch = { node.arn : [] }
+    try:
+        tag_str = node.tag_str
+    except:
+        tag_str = 'N/A'
+    graph_out.node(node.arn, node.arn+'\n\n'+tag_str)
+    children = list(node.children.keys())
+    if len(children)>0:
+        for child in children:
+            child_asset = build_viz(node.children[child])
+            branch[node.arn].append(child_asset)
+            graph_out.edge(node.children[child].arn, node.arn)
+    return branch
+
+
 def build_resource_tree(node):
     """
     args:
@@ -281,6 +297,9 @@ if __name__ == '__main__':
     this_asset = get_payload_obj(root_arn)
     resource_tree = build_resource_tree(this_asset)
 
-    pp(resource_tree.children['vol-596aeefe'].tag_str)
+    # pp(resource_tree.children['vol-596aeefe'].tag_str)
     # pp(resource_tree.tag_str)
+    graph_out = Digraph('test', filename='test.gv')
+    build_viz(resource_tree)
+    graph_out.view()
 
